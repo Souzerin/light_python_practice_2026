@@ -26,7 +26,7 @@ def main():
     print(f"Индексация папки: {folder_path}")
 
     # Инициализация базы данных
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     db_path = os.path.join(base_dir, "data", "app.db")
     db = Database(db_path)
 
@@ -38,3 +38,4 @@ def main():
         sys.exit(1)
     finally:
         db.close()
+main()

@@ -5,37 +5,23 @@ import os
 class Database:
     """Класс для управления базой данных индексатора."""
 
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.connection = None
+        self.cursor = None
+
     def initialize(self):
+        """Инициализация базы данных: создание папки, подключение, создание таблиц."""
         db_dir = os.path.dirname(self.db_path)
-        if db_dir:  # создаём папку только если путь не пустой
+        if db_dir:
             os.makedirs(db_dir, exist_ok=True)
 
         self.connection = sqlite3.connect(self.db_path)
         self.cursor = self.connection.cursor()
         self._create_tables()
         self.connection.commit()
-    def initialize(self):
-        """
-        Инициализация базы данных: создание папки, подключение, создание таблиц.
-        """
-        # Создание директории для БД, если не существует
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-
-        # Подключение к БД
-        self.connection = sqlite3.connect(self.db_path)
-        self.cursor = self.connection.cursor()
-
-        # Создание таблиц
-        self._create_tables()
-
-        # Применение изменений
-        self.connection.commit()
 
     def _create_tables(self):
-        """
-        Создание начальной схемы таблиц для индексации файлов.
-        """
-        # Таблица для хранения информации о файлах
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,8 +34,6 @@ class Database:
                 is_present INTEGER DEFAULT 1
             )
         """)
-
-        # Таблица для хранения хэшей файлов (для этапа 3)
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS file_hashes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,8 +44,6 @@ class Database:
                 FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
             )
         """)
-
-        # Таблица для хранения результатов проверок (для этапа 4)
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS check_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,8 +53,6 @@ class Database:
                 result_summary TEXT
             )
         """)
-
-        # Таблица для хранения деталей проверок
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS check_details (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +67,5 @@ class Database:
         """)
 
     def close(self):
-        """Закрытие соединения с базой данных."""
         if self.connection:
             self.connection.close()

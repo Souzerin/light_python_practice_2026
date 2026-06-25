@@ -1,41 +1,83 @@
+"""
+Console File Indexer
+Точка входа в приложение.
+"""
+
 import sys
 import os
 from database import Database
+from scanner import scan_folder
+from indexer import update_index, get_indexed_files
+from reporter import print_scan_report, print_index_stats
+from filters import filter_by_extension
 
 
 def main():
     """Главная функция приложения."""
-    if len(sys.argv) < 2:
-        print("Ошибка: Не указан путь к папке.")
-        print("Использование: python main.py <путь_к_папке>")
-        sys.exit(1)
 
-    folder_path = sys.argv[1]
+    # Тестовый путь - замени на свою папку
+    folder_path = r"E:\test_folder"  # ← ЗАМЕНИ НА СВОЮ ПАПКУ
+
+    print("=" * 70)
+    print("КОНСОЛЬНЫЙ ИНДЕКСАТОР ФАЙЛОВ")
+    print("=" * 70)
 
     # Проверка существования папки
     if not os.path.exists(folder_path):
-        print(f"Ошибка: Папка '{folder_path}' не существует.")
-        sys.exit(1)
+        print(f"❌ ОШИБКА: Папка '{folder_path}' не существует!")
+        print("Создай папку или укажи правильный путь")
+        return
 
     if not os.path.isdir(folder_path):
-        print(f"Ошибка: '{folder_path}' не является папкой.")
-        sys.exit(1)
+        print(f"❌ ОШИБКА: '{folder_path}' не является папкой!")
+        return
 
-    # Преобразование в абсолютный путь
     folder_path = os.path.abspath(folder_path)
-    print(f"Индексация папки: {folder_path}")
+    print(f"✓ Папка: {folder_path}")
 
-    # Инициализация базы данных
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    db_path = os.path.join(base_dir, "data", "app.db")
+    # Создаем фильтры (пример - только Python и текстовые файлы)
+    filters = [
+        filter_by_extension(['.py', '.txt', '.md', '.csv', '.json', '.log'])
+    ]
+
+    # Инициализация БД
+    db_path = os.path.join("data", "app.db")
+    print(f"✓ База данных: {db_path}")
+
     db = Database(db_path)
 
     try:
+        # Инициализируем БД
         db.initialize()
-        print(f"База данных создана: {db_path}")
+
+        # 1. Сканируем папку
+        print("\n--- СКАНИРОВАНИЕ ---")
+        scanned_files = scan_folder(folder_path, filters=filters)
+
+        # 2. Выводим отчет о сканировании
+        print_scan_report(scanned_files)
+
+        # 3. Обновляем индекс в БД
+        print("\n--- ОБНОВЛЕНИЕ ИНДЕКСА ---")
+        stats = update_index(db, scanned_files, folder_path)
+        print_index_stats(stats)
+
+        # 4. Проверяем что в БД
+        indexed = get_indexed_files(db)
+        print(f"\n✓ Всего в индексе: {len(indexed)} файлов")
+
+        print("\n" + "=" * 70)
+        print("ГОТОВО!")
+        print("=" * 70)
+
     except Exception as e:
-        print(f"Ошибка при создании базы данных: {e}")
-        sys.exit(1)
+        print(f"\n❌ ОШИБКА: {e}")
+        import traceback
+        traceback.print_exc()
+
     finally:
         db.close()
-main()
+
+
+if __name__ == "__main__":
+    main()

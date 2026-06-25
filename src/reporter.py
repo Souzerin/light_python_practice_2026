@@ -155,3 +155,85 @@ def format_size(size_bytes):
             return f"{size_bytes:.1f} {unit}"
         size_bytes /= 1024
     return f"{size_bytes:.1f} TB"
+
+
+def print_backup_report(results):
+    """
+    Выводит отчет о сравнении с резервной копией.
+
+    Args:
+        results: Результаты сравнения из compare_with_backup()
+    """
+    print("\n" + "=" * 70)
+    print("РЕЗУЛЬТАТЫ СРАВНЕНИЯ С РЕЗЕРВНОЙ КОПИЕЙ")
+    print("=" * 70)
+
+    # Общая статистика
+    total_files = (len(results['unchanged']) + len(results['changed']) +
+                   len(results['missing']) + len(results['extra']))
+
+    print(f"\nОбщая статистика:")
+    print(f"  Всего файлов:        {total_files}")
+    print(f"  ✓ Без изменений:     {len(results['unchanged'])}")
+    print(f"  ~ Изменено:          {len(results['changed'])}")
+    print(f"  - Отсутствует:       {len(results['missing'])}")
+    print(f"  + Лишних:            {len(results['extra'])}")
+    print(f"  ✗ Ошибок:            {len(results['errors'])}")
+
+    # Измененные файлы
+    if results['changed']:
+        print(f"\n{'=' * 70}")
+        print(f"ИЗМЕНЕННЫЕ ФАЙЛЫ ({len(results['changed'])}):")
+        print(f"{'=' * 70}")
+        print(f"{'Путь':50} {'Размер(источник)':>15} {'Размер(бэкап)':>15}")
+        print("-" * 80)
+
+        for item in results['changed'][:30]:
+            print(f"{item['relative_path']:50} "
+                  f"{format_size(item['size_bytes_source']):>15} "
+                  f"{format_size(item['size_bytes_backup']):>15}")
+
+    # Отсутствующие файлы
+    if results['missing']:
+        print(f"\n{'=' * 70}")
+        print(f"ОТСУТСТВУЮЩИЕ ФАЙЛЫ (в бэкапе есть, в источнике нет) ({len(results['missing'])}):")
+        print(f"{'=' * 70}")
+
+        for item in results['missing'][:20]:
+            print(f"  - {item['relative_path']} ({format_size(item['size_bytes'])})")
+
+    # Лишние файлы
+    if results['extra']:
+        print(f"\n{'=' * 70}")
+        print(f"ЛИШНИЕ ФАЙЛЫ (в источнике есть, в бэкапе нет) ({len(results['extra'])}):")
+        print(f"{'=' * 70}")
+
+        for item in results['extra'][:20]:
+            print(f"  + {item['relative_path']} ({format_size(item['size_bytes'])})")
+
+    # Если все ок
+    if not results['changed'] and not results['missing'] and not results['extra']:
+        print(f"\n✓ Папки идентичны!")
+
+
+def print_check_history(history):
+    """
+    Выводит историю проверок.
+
+    Args:
+        history: Список записей о проверках
+    """
+    if not history:
+        print("\nИстория проверок пуста.")
+        return
+
+    print("\n" + "=" * 70)
+    print(f"ИСТОРИЯ ПРОВЕРОК (последние {len(history)}):")
+    print("=" * 70)
+
+    for i, check in enumerate(history, 1):
+        print(f"\n{i}. Проверка #{check['id']} — {check['checked_at']}")
+        print(f"   Тип: {check['check_type']}")
+        print(f"   Бэкап: {check['backup_path']}")
+        print(f"   Результат:\n{check['result_summary'][:200]}")
+        print("-" * 50)

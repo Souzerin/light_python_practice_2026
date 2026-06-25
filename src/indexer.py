@@ -25,9 +25,15 @@ def update_index(db, scanned_files, folder_path):
     """
     cursor = db.cursor
 
-    # Получаем список всех файлов, которые сейчас есть в БД
-    cursor.execute("SELECT id, relative_path FROM files WHERE is_present = 1")
-    existing_files = {row[1]: row[0] for row in cursor.fetchall()}
+    # Получаем список ВСЕХ файлов, которые есть в БД (включая отсутствующие)
+    cursor.execute("SELECT id, relative_path, size_bytes, modified_at FROM files")
+    all_db_files = {}
+    for row in cursor.fetchall():
+        all_db_files[row[1]] = {
+            'id': row[0],
+            'size_bytes': row[2],
+            'modified_at': row[3]
+        }
 
     # Множество путей из нового сканирования
     scanned_paths = set()
@@ -43,36 +49,47 @@ def update_index(db, scanned_files, folder_path):
         relative_path = file_data['relative_path']
         scanned_paths.add(relative_path)
 
-        if relative_path in existing_files:
+        if relative_path in all_db_files:
             # Файл уже есть в БД - проверяем, изменился ли
-            file_id = existing_files[relative_path]
-
-            cursor.execute("""
-                SELECT size_bytes, modified_at 
-                FROM files 
-                WHERE id = ?
-            """, (file_id,))
-
-            old_data = cursor.fetchone()
+            existing = all_db_files[relative_path]
+            file_id = existing['id']
 
             # Сравниваем размер и дату модификации
-            if (old_data[0] != file_data['size_bytes'] or
-                    old_data[1] != file_data['modified_at']):
+            if (existing['size_bytes'] != file_data['size_bytes'] or
+                    existing['modified_at'] != file_data['modified_at']):
 
+                # Данные изменились - обновляем запись
                 cursor.execute("""
                     UPDATE files 
-                    SET size_bytes = ?, modified_at = ?, is_present = 1
+                    SET size_bytes = ?, 
+                        modified_at = ?, 
+                        is_present = 1,
+                        file_name = ?,
+                        extension = ?,
+                        file_type = ?
                     WHERE id = ?
-                """, (file_data['size_bytes'], file_data['modified_at'], file_id))
+                """, (
+                    file_data['size_bytes'],
+                    file_data['modified_at'],
+                    file_data['file_name'],
+                    file_data['extension'],
+                    file_data['file_type'],
+                    file_id
+                ))
                 stats['updated'] += 1
             else:
-                # Обновляем is_present на всякий случай
-                cursor.execute("UPDATE files SET is_present = 1 WHERE id = ?", (file_id,))
+                # Данные не изменились - просто помечаем как присутствующий
+                cursor.execute("""
+                    UPDATE files 
+                    SET is_present = 1 
+                    WHERE id = ?
+                """, (file_id,))
                 stats['unchanged'] += 1
         else:
             # Новый файл - добавляем
             cursor.execute("""
-                INSERT INTO files (relative_path, file_name, extension, size_bytes, modified_at, file_type, is_present)
+                INSERT INTO files 
+                (relative_path, file_name, extension, size_bytes, modified_at, file_type, is_present)
                 VALUES (?, ?, ?, ?, ?, ?, 1)
             """, (
                 file_data['relative_path'],
@@ -85,9 +102,14 @@ def update_index(db, scanned_files, folder_path):
             stats['added'] += 1
 
     # Помечаем отсутствующие файлы
-    for path, file_id in existing_files.items():
+    # Те файлы что есть в БД, но не найдены при текущем сканировании
+    for path, info in all_db_files.items():
         if path not in scanned_paths:
-            cursor.execute("UPDATE files SET is_present = 0 WHERE id = ?", (file_id,))
+            cursor.execute("""
+                UPDATE files 
+                SET is_present = 0 
+                WHERE id = ?
+            """, (info['id'],))
             stats['removed'] += 1
 
     # Сохраняем изменения
@@ -110,11 +132,37 @@ def get_indexed_files(db, only_present=True):
     cursor = db.cursor
 
     if only_present:
-        cursor.execute("SELECT * FROM files WHERE is_present = 1 ORDER BY relative_path")
+        cursor.execute("""
+            SELECT id, relative_path, file_name, extension, 
+                   size_bytes, modified_at, file_type, is_present
+            FROM files 
+            WHERE is_present = 1 
+            ORDER BY relative_path
+        """)
     else:
-        cursor.execute("SELECT * FROM files ORDER BY relative_path")
+        cursor.execute("""
+            SELECT id, relative_path, file_name, extension, 
+                   size_bytes, modified_at, file_type, is_present
+            FROM files 
+            ORDER BY relative_path
+        """)
 
     columns = ['id', 'relative_path', 'file_name', 'extension',
                'size_bytes', 'modified_at', 'file_type', 'is_present']
 
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def reset_index(db):
+    """
+    Полностью очищает индекс файлов.
+    Полезно если нужно начать с чистого листа.
+
+    Args:
+        db: Объект Database
+    """
+    cursor = db.cursor
+    cursor.execute("DELETE FROM files")
+    cursor.execute("DELETE FROM file_hashes")
+    db.connection.commit()
+    print("✓ Индекс полностью очищен")

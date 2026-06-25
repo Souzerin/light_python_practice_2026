@@ -5,15 +5,7 @@
 
 
 def filter_by_extension(extensions):
-    """
-    Создает фильтр по расширениям файлов.
-
-    Args:
-        extensions: Список расширений (с точкой, например ['.py', '.txt'])
-
-    Returns:
-        Функцию-фильтр
-    """
+    """Фильтр по расширениям файлов."""
     extensions = [ext.lower() for ext in extensions]
 
     def _filter(file_data):
@@ -23,15 +15,7 @@ def filter_by_extension(extensions):
 
 
 def filter_by_name_pattern(pattern):
-    """
-    Создает фильтр по имени файла (поиск подстроки без учета регистра).
-
-    Args:
-        pattern: Подстрока для поиска в имени файла
-
-    Returns:
-        Функцию-фильтр
-    """
+    """Фильтр по подстроке в имени файла."""
     pattern = pattern.lower()
 
     def _filter(file_data):
@@ -41,15 +25,7 @@ def filter_by_name_pattern(pattern):
 
 
 def filter_exclude_extensions(extensions):
-    """
-    Создает фильтр для исключения файлов по расширениям.
-
-    Args:
-        extensions: Список расширений для исключения
-
-    Returns:
-        Функцию-фильтр
-    """
+    """Исключает файлы с указанными расширениями."""
     extensions = [ext.lower() for ext in extensions]
 
     def _filter(file_data):
@@ -59,15 +35,7 @@ def filter_exclude_extensions(extensions):
 
 
 def filter_by_min_size(min_bytes):
-    """
-    Создает фильтр по минимальному размеру файла.
-
-    Args:
-        min_bytes: Минимальный размер в байтах
-
-    Returns:
-        Функцию-фильтр
-    """
+    """Фильтр по минимальному размеру."""
 
     def _filter(file_data):
         return file_data.get('size_bytes', 0) >= min_bytes
@@ -76,18 +44,20 @@ def filter_by_min_size(min_bytes):
 
 
 def filter_by_max_size(max_bytes):
-    """
-    Создает фильтр по максимальному размеру файла.
-
-    Args:
-        max_bytes: Максимальный размер в байтах
-
-    Returns:
-        Функцию-фильтр
-    """
+    """Фильтр по максимальному размеру."""
 
     def _filter(file_data):
         return file_data.get('size_bytes', 0) <= max_bytes
+
+    return _filter
+
+
+def filter_by_size_range(min_bytes, max_bytes):
+    """Фильтр по диапазону размера."""
+
+    def _filter(file_data):
+        size = file_data.get('size_bytes', 0)
+        return min_bytes <= size <= max_bytes
 
     return _filter
 
@@ -106,3 +76,18 @@ def filter_media_only(file_data):
 def filter_python_only(file_data):
     """Только Python файлы."""
     return file_data.get('extension') == '.py'
+
+
+def filter_images_only(file_data):
+    """Только изображения."""
+    return file_data.get('file_type') == 'image'
+
+
+def filter_documents_only(file_data):
+    """Только документы."""
+    return file_data.get('file_type') == 'document'
+
+
+def filter_no_extension(file_data):
+    """Файлы без расширения."""
+    return file_data.get('extension') == ''

@@ -4,13 +4,13 @@
 """
 
 import os
-from pathlib import Path
 from datetime import datetime
 
 
 def scan_folder(folder_path, filters=None):
     """
     Рекурсивно обходит папку и собирает метаданные файлов.
+    Использует явную рекурсию через внутреннюю функцию.
 
     Args:
         folder_path: Абсолютный путь к сканируемой папке
@@ -21,57 +21,69 @@ def scan_folder(folder_path, filters=None):
     """
     files_data = []
     folder_path = os.path.abspath(folder_path)
-
-    print(f"Сканирование папки: {folder_path}")
-    file_count = 0
     error_count = 0
 
-    for root, dirs, files in os.walk(folder_path):
-        # Пропускаем скрытые папки (начинаются с точки)
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
+    print(f"Сканирование папки: {folder_path}")
 
-        for filename in files:
-            # Пропускаем скрытые файлы
-            if filename.startswith('.'):
+    def _recursive_scan(current_path):
+        """Рекурсивная функция обхода."""
+        nonlocal error_count
+
+        try:
+            # Получаем содержимое текущей папки
+            entries = os.listdir(current_path)
+        except (PermissionError, OSError) as e:
+            error_count += 1
+            rel_path = os.path.relpath(current_path, folder_path)
+            print(f"  ⚠ Пропущена папка (нет доступа): {rel_path}")
+            return
+
+        for entry in entries:
+            # Пропускаем скрытые файлы и папки
+            if entry.startswith('.'):
                 continue
 
-            file_path = os.path.join(root, filename)
+            entry_path = os.path.join(current_path, entry)
 
             try:
-                # Получаем метаданные
-                stat_info = os.stat(file_path)
+                if os.path.isdir(entry_path):
+                    # РЕКУРСИВНЫЙ ВЫЗОВ ДЛЯ ПАПКИ
+                    _recursive_scan(entry_path)
 
-                # Относительный путь от корня сканирования
-                relative_path = os.path.relpath(file_path, folder_path)
+                elif os.path.isfile(entry_path):
+                    # Обработка файла
+                    stat_info = os.stat(entry_path)
+                    relative_path = os.path.relpath(entry_path, folder_path)
+                    extension = os.path.splitext(entry)[1].lower()
+                    file_type = get_file_type(extension)
 
-                # Определяем расширение и тип файла
-                extension = os.path.splitext(filename)[1].lower()
-                file_type = get_file_type(extension)
+                    file_data = {
+                        'relative_path': relative_path,
+                        'file_name': entry,
+                        'extension': extension if extension else '',
+                        'size_bytes': stat_info.st_size,
+                        'modified_at': datetime.fromtimestamp(stat_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                        'file_type': file_type
+                    }
 
-                file_data = {
-                    'relative_path': relative_path,
-                    'file_name': filename,
-                    'extension': extension if extension else '',
-                    'size_bytes': stat_info.st_size,
-                    'modified_at': datetime.fromtimestamp(stat_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                    'file_type': file_type
-                }
+                    # Применяем фильтры
+                    if filters:
+                        passed = all(f(file_data) for f in filters)
+                        if not passed:
+                            continue
 
-                # Применяем фильтры
-                if filters:
-                    passed = all(f(file_data) for f in filters)
-                    if not passed:
-                        continue
-
-                files_data.append(file_data)
-                file_count += 1
+                    files_data.append(file_data)
 
             except (PermissionError, OSError) as e:
                 error_count += 1
-                print(f"  ⚠ Пропущен (нет доступа): {relative_path}")
+                rel_path = os.path.relpath(entry_path, folder_path)
+                print(f"  ⚠ Пропущен (нет доступа): {rel_path}")
                 continue
 
-    print(f"✓ Сканирование завершено: найдено {file_count} файлов")
+    # Запускаем рекурсивный обход с корневой папки
+    _recursive_scan(folder_path)
+
+    print(f"✓ Сканирование завершено: найдено {len(files_data)} файлов")
     if error_count > 0:
         print(f"  Пропущено из-за ошибок: {error_count}")
 

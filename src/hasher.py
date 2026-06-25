@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime
 
 
-def calculate_file_hash(file_path, algorithm='sha256', chunk_size=8192):
+def calculate_file_hash(file_path, algorithm='sha256', chunk_size=65536):
     """
     Вычисляет хэш содержимого файла.
 

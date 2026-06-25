@@ -1,6 +1,7 @@
 """
 Модуль для сравнения исходной папки с резервной копией.
 Выявляет отсутствующие, измененные и лишние файлы.
+Использует явную рекурсию для обхода папок.
 """
 
 import os
@@ -28,13 +29,13 @@ def compare_with_backup(db, source_path, backup_path, algorithm='sha256', use_ha
     print(f"  Источник: {source_path}")
     print(f"  Бэкап:    {backup_path}")
 
-    # 1. Сканируем обе папки
+    # 1. Сканируем обе папки рекурсивно
     print("\nСканирование исходной папки...")
-    source_files = scan_folder_relative(source_path)
+    source_files = scan_folder_recursive(source_path)
     print(f"  Найдено: {len(source_files)} файлов")
 
     print("Сканирование резервной копии...")
-    backup_files = scan_folder_relative(backup_path)
+    backup_files = scan_folder_recursive(backup_path)
     print(f"  Найдено: {len(backup_files)} файлов")
 
     # 2. Создаем словари для быстрого поиска
@@ -104,7 +105,7 @@ def compare_with_backup(db, source_path, backup_path, algorithm='sha256', use_ha
                     'size_bytes_backup': backup_info['size_bytes'],
                     'source_modified': source_info['modified_at'],
                     'backup_modified': backup_info['modified_at'],
-                    'hash_different': None  # Будет определено ниже
+                    'hash_different': None
                 }
 
                 if use_hashes:
@@ -135,15 +136,16 @@ def compare_with_backup(db, source_path, backup_path, algorithm='sha256', use_ha
     return results
 
 
-def scan_folder_relative(folder_path):
+def scan_folder_recursive(folder_path):
     """
-    Сканирует папку и возвращает словарь с относительными путями.
+    Рекурсивно сканирует папку и возвращает список словарей с метаданными.
+    Использует явную рекурсию без os.walk().
 
     Args:
-        folder_path: Путь к папке
+        folder_path: Путь к папке для сканирования
 
     Returns:
-        Список словарей с метаданными
+        Список словарей с метаданными файлов
     """
     files_data = []
 
@@ -151,29 +153,76 @@ def scan_folder_relative(folder_path):
         print(f"  ⚠ Папка не существует: {folder_path}")
         return files_data
 
-    for root, dirs, files in os.walk(folder_path):
-        # Пропускаем скрытые папки
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
+    def _recursive_scan(current_path):
+        """
+        Внутренняя рекурсивная функция обхода.
+        Вызывает саму себя для каждой вложенной папки.
 
-        for filename in files:
-            if filename.startswith('.'):
+        Args:
+            current_path: Текущая папка для сканирования
+        """
+        try:
+            # Получаем список всех элементов в текущей папке
+            entries = os.listdir(current_path)
+        except PermissionError:
+            # Нет прав на чтение папки — пропускаем
+            rel_path = os.path.relpath(current_path, folder_path)
+            print(f"  ⚠ Пропущена папка (нет доступа): {rel_path}")
+            return
+        except OSError as e:
+            # Другие ошибки ОС
+            rel_path = os.path.relpath(current_path, folder_path)
+            print(f"  ⚠ Ошибка чтения папки: {rel_path} ({e})")
+            return
+
+        for entry in entries:
+            # Пропускаем скрытые элементы (начинаются с точки)
+            if entry.startswith('.'):
                 continue
 
-            file_path = os.path.join(root, filename)
+            entry_path = os.path.join(current_path, entry)
 
             try:
-                stat_info = os.stat(file_path)
-                relative_path = os.path.relpath(file_path, folder_path)
+                # Проверяем, это папка или файл
+                if os.path.isdir(entry_path):
+                    # РЕКУРСИВНЫЙ ВЫЗОВ — обходим вложенную папку
+                    _recursive_scan(entry_path)
 
-                files_data.append({
-                    'relative_path': relative_path,
-                    'file_name': filename,
-                    'size_bytes': stat_info.st_size,
-                    'modified_at': datetime.fromtimestamp(stat_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                })
+                elif os.path.isfile(entry_path):
+                    # Это файл — собираем метаданные
+                    stat_info = os.stat(entry_path)
 
-            except (PermissionError, OSError):
+                    # Вычисляем относительный путь от корневой папки
+                    relative_path = os.path.relpath(entry_path, folder_path)
+
+                    # Форматируем дату модификации
+                    modified_time = datetime.fromtimestamp(
+                        stat_info.st_mtime
+                    ).strftime('%Y-%m-%d %H:%M:%S')
+
+                    # Добавляем файл в результаты
+                    files_data.append({
+                        'relative_path': relative_path,
+                        'file_name': entry,
+                        'size_bytes': stat_info.st_size,
+                        'modified_at': modified_time
+                    })
+
+            except PermissionError:
+                # Нет прав на чтение элемента — пропускаем
+                rel_path = os.path.relpath(entry_path, folder_path)
+                print(f"  ⚠ Пропущен (нет доступа): {rel_path}")
                 continue
+            except OSError as e:
+                # Другие ошибки ОС
+                rel_path = os.path.relpath(entry_path, folder_path)
+                print(f"  ⚠ Ошибка чтения: {rel_path} ({e})")
+                continue
+
+    # Запускаем рекурсивный обход с корневой папки
+    print(f"  Начало рекурсивного обхода: {folder_path}")
+    _recursive_scan(folder_path)
+    print(f"  Обход завершен. Найдено файлов: {len(files_data)}")
 
     return files_data
 
@@ -183,7 +232,7 @@ def save_check_results(db, source_path, backup_path, results):
     Сохраняет результаты проверки в базу данных.
 
     Args:
-        db: Объект Database
+        db: Объект Database с активным соединением
         source_path: Путь к исходной папке
         backup_path: Путь к бэкапу
         results: Результаты сравнения
@@ -212,7 +261,7 @@ def save_check_results(db, source_path, backup_path, results):
 
     # Сохраняем детали по каждой категории
 
-    # Отсутствующие файлы
+    # Отсутствующие файлы (есть в бэкапе, нет в источнике)
     for item in results['missing']:
         cursor.execute("""
             INSERT INTO check_details (check_id, relative_path, status, details)
@@ -220,7 +269,7 @@ def save_check_results(db, source_path, backup_path, results):
         """, (check_id, item['relative_path'],
               f"Отсутствует в источнике, есть в бэкапе ({item['size_bytes']} байт)"))
 
-    # Лишние файлы
+    # Лишние файлы (есть в источнике, нет в бэкапе)
     for item in results['extra']:
         cursor.execute("""
             INSERT INTO check_details (check_id, relative_path, status, details)
@@ -228,10 +277,10 @@ def save_check_results(db, source_path, backup_path, results):
         """, (check_id, item['relative_path'],
               f"Есть в источнике, отсутствует в бэкапе ({item['size_bytes']} байт)"))
 
-    # Измененные файлы
+    # Измененные файлы (есть в обоих, но отличаются)
     for item in results['changed']:
         details = (
-            f"Размер: {item['size_bytes_source']} -> {item['size_bytes_back']} байт, "
+            f"Размер: {item['size_bytes_source']} -> {item['size_bytes_backup']} байт, "
             f"Изменен: {item['source_modified']} -> {item['backup_modified']}"
         )
         if item.get('hash_different') is not None:
@@ -251,14 +300,14 @@ def save_check_results(db, source_path, backup_path, results):
 
 def get_check_history(db, limit=10):
     """
-    Получает историю проверок.
+    Получает историю проверок из базы данных.
 
     Args:
-        db: Объект Database
-        limit: Максимальное количество записей
+        db: Объект Database с активным соединением
+        limit: Максимальное количество записей в истории
 
     Returns:
-        Список записей о проверках
+        Список словарей с записями о проверках
     """
     cursor = db.cursor
 
@@ -278,11 +327,11 @@ def get_check_details(db, check_id):
     Получает детали конкретной проверки.
 
     Args:
-        db: Объект Database
+        db: Объект Database с активным соединением
         check_id: ID проверки
 
     Returns:
-        Список деталей проверки
+        Список словарей с деталями проверки
     """
     cursor = db.cursor
 

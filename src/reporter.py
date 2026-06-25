@@ -95,22 +95,25 @@ def print_duplicate_report(duplicate_groups, max_groups_display=20, max_files_in
         print("=" * 70)
         return
 
+    # Считаем статистику здесь же (не вызываем внешнюю функцию)
+    total_groups = len(duplicate_groups)
+    total_duplicate_files = sum(g['file_count'] for g in duplicate_groups)
+
+    # Сколько места занимают лишние копии
+    wasted_space = 0
+    for g in duplicate_groups:
+        # В группе из N файлов лишних N-1 копий
+        single_file_size = g['total_size'] // g['file_count']
+        wasted_space += single_file_size * (g['file_count'] - 1)
+
     print("\n" + "=" * 70)
     print(f"НАЙДЕНО ДУБЛИКАТОВ: {len(duplicate_groups)} групп")
     print("=" * 70)
 
-    # Статистика
-    stats = get_duplicate_stats(duplicate_groups)
-
     print(f"\nОбщая статистика:")
-    print(f"  Групп дубликатов:    {stats['total_groups']}")
-    print(f"  Всего файлов-дублей: {stats['total_duplicate_files']}")
-    print(f"  Потенциально можно освободить: {format_size(stats['wasted_space_bytes'])}")
-
-    if stats['group_sizes']:
-        print(f"\nРаспределение по размерам групп:")
-        for size in sorted(stats['group_sizes'].keys()):
-            print(f"  {size} файлов в группе: {stats['group_sizes'][size]} групп(ы)")
+    print(f"  Групп дубликатов:    {total_groups}")
+    print(f"  Всего файлов-дублей: {total_duplicate_files}")
+    print(f"  Можно освободить:    {format_size(wasted_space)}")
 
     # Вывод групп
     print(f"\n{'=' * 70}")
@@ -118,11 +121,13 @@ def print_duplicate_report(duplicate_groups, max_groups_display=20, max_files_in
     print(f"{'=' * 70}")
 
     for i, group in enumerate(duplicate_groups[:max_groups_display], 1):
+        single_size = group['total_size'] // group['file_count']
+
         print(f"\nГруппа #{i}: {group['file_count']} одинаковых файлов")
         print(f"  Хэш: {group['hash'][:32]}...")
-        print(f"  Размер каждого файла: {format_size(group['total_size'] // group['file_count'])}")
+        print(f"  Размер каждого файла: {format_size(single_size)}")
         print(f"  Общий размер группы: {format_size(group['total_size'])}")
-        print(f"  Можно освободить: {format_size(group['total_size'] - group['total_size'] // group['file_count'])}")
+        print(f"  Можно освободить: {format_size(single_size * (group['file_count'] - 1))}")
         print(f"\n  Файлы в группе:")
 
         for j, file_info in enumerate(group['files'][:max_files_in_group], 1):
@@ -135,26 +140,6 @@ def print_duplicate_report(duplicate_groups, max_groups_display=20, max_files_in
 
     if len(duplicate_groups) > max_groups_display:
         print(f"\n... и еще {len(duplicate_groups) - max_groups_display} групп")
-
-
-def format_size(size_bytes):
-    """
-    Форматирует размер в байтах в читаемый вид.
-
-    Args:
-        size_bytes: Размер в байтах
-
-    Returns:
-        Строка с форматированным размером
-    """
-    if size_bytes == 0:
-        return "0 B"
-
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
 
 
 def print_backup_report(results):
@@ -235,5 +220,27 @@ def print_check_history(history):
         print(f"\n{i}. Проверка #{check['id']} — {check['checked_at']}")
         print(f"   Тип: {check['check_type']}")
         print(f"   Бэкап: {check['backup_path']}")
-        print(f"   Результат:\n{check['result_summary'][:200]}")
+        # Показываем только первые 200 символов summary
+        summary = check.get('result_summary', 'Нет данных')
+        print(f"   Результат:\n{summary[:200]}")
         print("-" * 50)
+
+
+def format_size(size_bytes):
+    """
+    Форматирует размер в байтах в читаемый вид.
+
+    Args:
+        size_bytes: Размер в байтах
+
+    Returns:
+        Строка с форматированным размером
+    """
+    if size_bytes == 0:
+        return "0 B"
+
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} TB"
